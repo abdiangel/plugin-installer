@@ -8,21 +8,22 @@ jQuery(document).ready(function( $ ) {
         }
 
         var data = {
-            'action': 'mockTakePlugins',
-            'plugins': ['jetpack'], // plugin_installer.plugins,
+            'action': 'takePlugins',
+            'plugins': ['jetpack'] // plugin_installer.plugins,
             // 'local_plugins': []
         };
 
           $.ajax({
             type: 'post',
             url: ajaxurl,
+            dataType: "json",
             data,
             success: function(data) {
-                console.log(data);
+                console.log(data.status);
                 isLoading = false;
             },
             error: function(data) {
-                console.log(data);
+                console.log(data.status);
                 isLoading = false;
             }
         });        
