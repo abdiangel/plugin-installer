@@ -41,9 +41,9 @@ class PluginInstaller{
 		/* Use this array to determinate the plugins that will be downloaded,
     installed and activated. USE THE PLUGIN'S SLUG IN THE ARRAY. 
     Example : 'jetpack', 'wordpress-seo' */
-		$this->plugins = array(
+		//$this->plugins = array(
       //'jetpack'
-    );
+    //);
     /* Use this array to determinate the local or private plugins that will
     be downloaded, installed and activated. Provide the array with the
     full path of the file, example: '/home/user/wordpress-seo.7.1.zip',
@@ -57,22 +57,155 @@ class PluginInstaller{
 
     By default is an empty array.
     */
-    $this->local_plugins=array(
+    //$this->local_plugins=array(
     /*  array(
         'path' => '/home/user/wordpress-seo.7.1.zip',
         'slug' => 'wordpress-seo'
         ) */    
-    );
+    //);
 
 		//Uncomment the line below if you want to use the plugin.
-		add_action('init', $this->takePlugins($this->plugins, $this->local_plugins));		
-	}
+    //add_action('init', $this->takePlugins($this->plugins, $this->local_plugins));
+    add_action( 'admin_menu', array( $this, 'plginstMenu' ));
+    add_action( 'admin_enqueue_scripts',array( $this, 'enqueue_scripts' ));
+    add_action( 'wp_ajax_mockTakePlugins', array( $this, 'mockTakePlugins') );
+  }
+  
+  //Main Menu
+
+  public function plginstMenu(){
+    add_options_page( 'Plugin Installer', 
+    'Plugin Installer', 
+    'manage_options', 
+    'plugin-installer', 
+    array($this, 'plginstOptionsPage'));
+  }
+
+  public function plginstOptionsPage() {
+    if (!current_user_can('manage_options')) {
+      return;
+    }
+    ?>
+    <div class="wrap">
+        <h1><?= esc_html(get_admin_page_title()); ?></h1>
+        <div class="wrap">
+
+          <button id="install-action" class="button button-primary">Install Plugins</button>
+        </div>
+    </div>
+    <?php
+  }
+
+  public function mockTakePlugins() {
+    global $wpdb;
+    $this->plugins = $_POST['plugins'];
+
+    // $this->local_plugins= $_POST['local_plugins'];
+
+    if ( ! current_user_can('install_plugins') ) {
+      wp_die('Sorry, you are not allowed to install plugins on this site.');
+    }
+
+    include_once( ABSPATH . 'wp-admin/includes/plugin-install.php' );
+    $args = array(
+      'path' => ABSPATH.'wp-content/plugins/',
+      'preserve_zip' => false
+    );
+    /*Checking if the list of plugins is empty, if isn't empty
+    execute the request to the API of wordpress.org*/ //json_decode
+    if(!empty($this->plugins)){
+		  foreach($this->plugins as $plugin){
+			  $this->api = plugins_api( 'plugin_information', array(
+				  'slug' => $plugin,
+				  'fields' => array(
+						'downloadlink' => true,
+						'slug' => true,
+				  ),
+        ));
+        // Try to download the plugin.
+        $download= $this->PluginDownload($this->api->download_link, $args['path'].$this->api->slug.'.zip');
+        /* Checking if the download process was successful or failed to
+        continue the process, if the download failed, the process will stop*/
+        if ($download === true){
+          $unpack = $this->PluginUnpack($args, $args['path'].$this->api->slug.'.zip');          
+        }
+        /* Checking if the unzip process was successful or failed to
+        continue the process*/
+        if ($unpack === true){
+          $this->plugin_folder = ("/".$this->api->slug);
+		      $var = get_plugins($this->plugin_folder);
+		      foreach(array_keys($var) as $key){
+            $this->install = $this->plugin_folder."/".$key;
+		      }
+          $install = $this->PluginActivate($this->install);
+        /* Checking if the install process was successful or failed to
+        finish the process*/
+          if($install === false){
+            $status = 'success';
+            $msg = 'Successfully installed.';
+          }else{
+            $status = 'failed';
+            $msg = 'There was an error installing';
+          }
+        }
+
+        $json = array(
+          'status' => $status,
+          'msg' => $msg,
+        );
+
+        wp_send_json($json);
+      }		
+    }
+    /*Checking if the list of plugins is empty, if isn't empty
+    execute unzip process.*/
+    //if(!empty($this->local_plugins)){
+    //  foreach($this->local_plugins as $key => $plugins){
+    //    $unpack_local= $this->PluginUnpack($this->local_args, $plugins['path']);
+        /* Checking if the unzip process was successful or failed to
+        continue the process*/
+        //if($unpack_local === true){
+        //  $this->plugin_folder_local = ("/".$plugins['slug']);
+        //  $var = get_plugins($this->plugin_folder_local);
+		      //foreach(array_keys($var) as $key){
+          //  $this->install_local = $this->plugin_folder_local."/".$key;
+          //}
+          //$install_local = $this->PluginActivate($this->install_local);
+          /* Checking if the install process was successful or failed to
+          finish the process*/
+          //if($install_local === true){
+          //  $status = 'success';
+          //  $msg = 'Successfully installed.';
+          //}else{
+          //  $status = 'failed';
+          //  $msg = 'There was an error installing';
+          //  }
+          //  $json = array(
+          //    'status' => $status,
+          //    'msg' => $msg,
+          //  );
+      
+          //  wp_send_json($json);
+          //}
+        //}						
+      wp_die();
+    // return wp_send_json($arr);
+  }
 
   // Main plugin function.
   public function takePlugins($plugins, $local_plugins){
+    // ARGUMENTOS Y $_POST  REDUNDAN Q PASA BRO?
+    global $wpdb;
+
+    $this->plugins = $_POST['plugins'];
+
+    $this->local_plugins= $_POST['local_plugins'];
+
+    if ( ! current_user_can('install_plugins') ){
+    wp_die('Sorry, you are not allowed to install plugins on this site.');
+    }
+
     include_once( ABSPATH . 'wp-admin/includes/plugin-install.php' );
-    $success = '<p> plugin installed and activated </p>';
-    $failure ='<p> cannot install plugin </p>';
     $args = array(
       'path' => ABSPATH.'wp-content/plugins/',
       'preserve_zip' => false
@@ -107,11 +240,20 @@ class PluginInstaller{
         /* Checking if the install process was successful or failed to
         finish the process*/
           if($install === true){
-          echo $success;		
+            $status = 'success';
+            $msg = 'Successfully installed.';
           }else{
-            echo $failure;
+            $status = 'failed';
+            $msg = 'There was an error installing';
           }
         }
+
+        $json = array(
+          'status' => $status,
+          'msg' => $msg,
+        );
+
+        wp_send_json($json);
       }		
     }
     /*Checking if the list of plugins is empty, if isn't empty
@@ -131,15 +273,24 @@ class PluginInstaller{
           /* Checking if the install process was successful or failed to
           finish the process*/
           if($install_local === true){
-          echo $success;		
+            $status = 'success';
+            $msg = 'Successfully installed.';
           }else{
-            echo $failure;
+            $status = 'failed';
+            $msg = 'There was an error installing';
             }
+            $json = array(
+              'status' => $status,
+              'msg' => $msg,
+            );
+      
+            wp_send_json($json);
           }
         }						
-      }		
+      }
+      wp_die();
     }
-  
+
   // Function to download the plugin.
   public function PluginDownload($url, $path){
       $ch = curl_init($url);
@@ -211,6 +362,21 @@ class PluginInstaller{
     }
     else
     	return false;
+  }
+
+  public function enqueue_scripts(){
+    wp_enqueue_script(
+      'ajax-script',
+      plugin_dir_url( __FILE__ ) . 'assets/installer.js',
+      array( 'jquery' )
+  );
+
+  // wp_localize_script( 'ajax-script', 'plugin_installer', array(
+  //   'plugins' => array('jetpack','uk-cookie-consent'),
+  //   'local_plugins' => array()
+  // ));
+
+  wp_enqueue_style( 'plugin-installer', plugin_dir_url( __FILE__ ) . 'assets/installer.css');
   }
 }
 
